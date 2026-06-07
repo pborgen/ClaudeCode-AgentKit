@@ -15,7 +15,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl git build-essential ca-certificates gnupg ripgrep unzip jq
+apt-get install -y curl git build-essential ca-certificates gnupg ripgrep unzip jq tmux
 
 # --- AWS CLI v2 (used by the idle-shutdown timer to stop this instance) ---
 curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
@@ -45,7 +45,19 @@ if ! grep -q '.npm-global/bin' /home/ubuntu/.bashrc; then
   echo 'export PATH=/home/ubuntu/.npm-global/bin:$PATH' >> /home/ubuntu/.bashrc
 fi
 export PATH=/home/ubuntu/.npm-global/bin:$PATH
-npm install -g @anthropic-ai/claude-code
+# Claude Code, plus ccmanager (a TUI to create/switch/manage parallel sessions).
+npm install -g @anthropic-ai/claude-code ccmanager
+
+# Auto-attach tmux on interactive login so sessions survive phone/SSH disconnects.
+if ! grep -q 'tmux attach -t main' /home/ubuntu/.bashrc; then
+  cat >> /home/ubuntu/.bashrc <<'BRC'
+
+# --- Auto-attach tmux on interactive login (sessions survive disconnects) ---
+if command -v tmux >/dev/null 2>&1 && [ -z "$${TMUX:-}" ] && [ -t 1 ] && [[ $- == *i* ]]; then
+  tmux attach -t main 2>/dev/null || tmux new-session -s main
+fi
+BRC
+fi
 EOF
 
 # --- Optional: git identity + dotfiles, so the box feels like home ---
@@ -66,17 +78,60 @@ fi
 if [ ${idle_shutdown_minutes} -gt 0 ]; then
   cat > /usr/local/bin/claude-dev-idle.sh <<'IDLE'
 #!/usr/bin/env bash
-# Stop this instance once no interactive session has been seen for the
-# configured window. "Interactive" = any process attached to a pty (covers
-# both classic sshd and Tailscale SSH, and protects tmux/long builds).
-set -euo pipefail
+# Stop this dev box when it is TRULY idle, but keep it alive while real work or
+# an attached session exists. The box is considered "alive" if ANY of:
+#   1. a Claude Code session is running (even detached inside tmux) -- never kill work
+#   2. a tmux client is currently attached (you are actively connected)
+#   3. an interactive shell is attached that is NOT just a detached tmux pane
+#      (raw SSH / console -- detected by walking process ancestry to sshd/tailscaled)
+# Otherwise increment the idle counter and stop the instance once the window passes.
+#
+# NOTE: `who` is intentionally NOT used -- Tailscale SSH does not write utmp.
+set -uo pipefail
 IDLE_MINUTES=${idle_shutdown_minutes}
 INTERVAL_MIN=5
 NEEDED=$(( (IDLE_MINUTES + INTERVAL_MIN - 1) / INTERVAL_MIN ))
 STATE=/var/run/claude-dev-idle.count
+DEV_USER=ubuntu
 [ -f "$STATE" ] || echo 0 > "$STATE"
 
-if ps -eo tty= | grep -qE '^pts/'; then
+alive() {
+  # 1. A Claude Code session running anywhere. The CLI is a native binary invoked
+  #    via a symlink, so its argv is just "claude" -- `pgrep -f <path>` does NOT
+  #    work. Match comm=claude and confirm the exe resolves into the package.
+  local cpid cexe
+  for cpid in $(pgrep -x claude 2>/dev/null); do
+    cexe=$(readlink "/proc/$cpid/exe" 2>/dev/null)
+    case "$cexe" in
+      */claude-code/*) return 0 ;;
+      "")              return 0 ;;
+    esac
+  done
+
+  # 2. A tmux client is attached (query the dev user's tmux server).
+  if [ -n "$(sudo -u "$DEV_USER" tmux list-clients 2>/dev/null)" ]; then return 0; fi
+
+  # 3. An interactive shell attached via a real connection (not a detached tmux
+  #    pane). Walk each pty process up its parents: hitting sshd/tailscaled means
+  #    attached; hitting the tmux server means it's a pane, not a live session.
+  local p ppid comm cur
+  for p in $(ps -eo pid=,tty= | awk '$2 ~ /^pts\// {print $1}'); do
+    cur="$p"
+    while [ "$${cur:-0}" -gt 1 ] 2>/dev/null; do
+      read -r ppid comm < <(ps -o ppid=,comm= -p "$cur" 2>/dev/null)
+      [ -z "$${ppid:-}" ] && break
+      case "$comm" in
+        sshd|tailscaled) return 0 ;;
+        tmux*) break ;;
+      esac
+      cur="$ppid"
+    done
+  done
+
+  return 1
+}
+
+if alive; then
   echo 0 > "$STATE"
   exit 0
 fi
@@ -87,7 +142,7 @@ if [ "$count" -ge "$NEEDED" ]; then
   TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
   IID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
   REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
-  logger -t claude-dev-idle "idle ~$${IDLE_MINUTES}m, stopping $IID"
+  logger -t claude-dev-idle "idle ~$${IDLE_MINUTES}m (no claude/attached session), stopping $IID"
   aws ec2 stop-instances --instance-ids "$IID" --region "$REGION"
 fi
 IDLE

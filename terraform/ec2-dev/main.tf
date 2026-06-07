@@ -25,10 +25,22 @@ resource "aws_internet_gateway" "this" {
   tags   = merge(local.tags, { Name = local.name })
 }
 
+# Pick an availability zone that actually offers the requested instance type.
+# Not every AZ supports every type (e.g. t3.small is unavailable in us-east-1e),
+# so we let AWS tell us which AZs are valid instead of hardcoding one.
+data "aws_ec2_instance_type_offerings" "this" {
+  filter {
+    name   = "instance-type"
+    values = [var.instance_type]
+  }
+  location_type = "availability-zone"
+}
+
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = "10.20.1.0/24"
   map_public_ip_on_launch = true
+  availability_zone       = sort(data.aws_ec2_instance_type_offerings.this.locations)[0]
 
   tags = merge(local.tags, { Name = "${local.name}-public" })
 }
