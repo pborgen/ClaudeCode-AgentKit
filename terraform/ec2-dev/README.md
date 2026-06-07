@@ -20,7 +20,8 @@ EBS volume. `terraform destroy` (or stopping the instance) when you're done keep
 1. **AWS CLI** configured with credentials: `aws configure` (and `aws sts get-caller-identity` to confirm).
 2. **Terraform** ≥ 1.5: `brew install terraform`.
 3. A **Tailscale account** (free): https://tailscale.com — then create an auth key at
-   https://login.tailscale.com/admin/settings/keys (enable *Reusable* + *Ephemeral*).
+   https://login.tailscale.com/admin/settings/keys. Enable *Reusable*; leave
+   *Ephemeral* **off** so the box survives stop/start (see [Notes](#notes--security)).
 
 ## Deploy
 
@@ -64,9 +65,14 @@ aws ssm start-session --target $(terraform output -raw instance_id) --region us-
 
 ## Notes & security
 
+- **Stop/start survives, but only with a non-ephemeral node.** The bootstrap
+  script runs once at first boot; Tailscale state persists on the EBS volume, so a
+  stopped-then-started box reconnects automatically — *unless* the node is
+  ephemeral, in which case it's removed from the tailnet while offline and can't
+  rejoin. So use a **reusable, non-ephemeral** key and **disable key expiry** on
+  the node (admin console → the machine → *Disable key expiry*).
 - The Tailscale auth key is passed via EC2 user-data, which is readable from the
-  instance's metadata service. Using an **ephemeral** key limits the blast radius
-  (it can't be reused to add other machines and the node auto-removes when offline).
+  instance's metadata service. Keep the key scoped to this use and rotate it if leaked.
 - State (`terraform.tfstate`) and `terraform.tfvars` contain secrets and are gitignored.
   For team use, move state to an [S3 backend](https://developer.hashicorp.com/terraform/language/settings/backends/s3).
 - Set up [Tailscale ACLs](https://tailscale.com/kb/1018/acls) if your tailnet has

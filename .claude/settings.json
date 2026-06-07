@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(gh pr create --title 'Add Terraform for a Tailscale-reachable EC2 Claude Code dev box' --body ' *)",
+      "Bash(git ls-remote *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git branch *)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
+    ]
+  }
+}
