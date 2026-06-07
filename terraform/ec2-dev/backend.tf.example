@@ -1,0 +1,19 @@
+# Remote state in S3 (optional). Only needed if you run Terraform from more than
+# one machine or want state backed up off your laptop.
+#
+# 1. Create the bucket once:  scripts/bootstrap-state.sh my-unique-bucket us-east-1
+# 2. Rename this file to backend.tf and set the bucket name below.
+# 3. terraform init -migrate-state
+#
+# `use_lockfile = true` uses S3-native locking (no DynamoDB table required;
+# needs Terraform >= 1.10).
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE-ME-globally-unique-bucket"
+    key          = "ec2-dev/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

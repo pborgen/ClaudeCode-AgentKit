@@ -121,6 +121,27 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Lets the box stop ITSELF for the idle-shutdown timer. Scoped by tag so it can
+# only act on instances created by this project, never anything else.
+resource "aws_iam_role_policy" "self_stop" {
+  count = var.idle_shutdown_minutes > 0 ? 1 : 0
+
+  name = "${local.name}-self-stop"
+  role = aws_iam_role.this.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ec2:StopInstances"]
+      Resource = "*"
+      Condition = {
+        StringEquals = { "ec2:ResourceTag/Project" = var.project_name }
+      }
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "this" {
   name = "${local.name}-profile"
   role = aws_iam_role.this.name
@@ -137,8 +158,12 @@ resource "aws_instance" "this" {
   iam_instance_profile   = aws_iam_instance_profile.this.name
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    tailscale_auth_key = var.tailscale_auth_key
-    hostname           = var.hostname
+    tailscale_auth_key    = var.tailscale_auth_key
+    hostname              = var.hostname
+    idle_shutdown_minutes = var.idle_shutdown_minutes
+    git_user_name         = var.git_user_name
+    git_user_email        = var.git_user_email
+    dotfiles_repo         = var.dotfiles_repo
   })
   # Re-provision if the bootstrap script changes.
   user_data_replace_on_change = true

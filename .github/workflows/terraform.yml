@@ -1,0 +1,36 @@
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      - name: terraform init
+        run: terraform init -backend=false
+        working-directory: terraform/ec2-dev
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: terraform/ec2-dev
+
+  # To also run `terraform plan` on PRs, give the repo AWS credentials via OIDC
+  # (aws-actions/configure-aws-credentials) and a TF_VAR_tailscale_auth_key
+  # secret, then add a step that runs `terraform plan -input=false`. Left out by
+  # default since it requires real cloud credentials.

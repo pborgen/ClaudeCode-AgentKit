@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Bootstrap a Claude Code dev box: swap, Tailscale (with Tailscale SSH),
-# Node.js, and Claude Code. Runs once at first boot as root.
+# Bootstrap a Claude Code dev box: swap, AWS CLI, Tailscale (with Tailscale SSH),
+# Node.js, Claude Code, optional dotfiles, and an idle auto-shutdown timer.
+# Runs once at first boot as root.
 set -euxo pipefail
 
 # --- Swap: 2GB RAM is tight for Node builds; back it with 4GB of swap ---
@@ -15,6 +16,12 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y curl git build-essential ca-certificates gnupg ripgrep unzip jq
+
+# --- AWS CLI v2 (used by the idle-shutdown timer to stop this instance) ---
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update
+rm -rf /tmp/aws /tmp/awscliv2.zip
 
 # --- Tailscale: join the tailnet and enable Tailscale SSH ---
 # `--ssh` lets anyone on your tailnet SSH in, authenticated by tailnet identity,
@@ -40,5 +47,72 @@ fi
 export PATH=/home/ubuntu/.npm-global/bin:$PATH
 npm install -g @anthropic-ai/claude-code
 EOF
+
+# --- Optional: git identity + dotfiles, so the box feels like home ---
+%{ if git_user_name != "" ~}
+sudo -u ubuntu git config --global user.name '${git_user_name}'
+%{ endif ~}
+%{ if git_user_email != "" ~}
+sudo -u ubuntu git config --global user.email '${git_user_email}'
+%{ endif ~}
+%{ if dotfiles_repo != "" ~}
+sudo -iu ubuntu git clone '${dotfiles_repo}' /home/ubuntu/.dotfiles || true
+if [ -x /home/ubuntu/.dotfiles/install.sh ]; then
+  sudo -iu ubuntu /home/ubuntu/.dotfiles/install.sh || true
+fi
+%{ endif ~}
+
+# --- Idle auto-shutdown: stop the box after N idle minutes (cost safety net) ---
+if [ ${idle_shutdown_minutes} -gt 0 ]; then
+  cat > /usr/local/bin/claude-dev-idle.sh <<'IDLE'
+#!/usr/bin/env bash
+# Stop this instance once no interactive session has been seen for the
+# configured window. "Interactive" = any process attached to a pty (covers
+# both classic sshd and Tailscale SSH, and protects tmux/long builds).
+set -euo pipefail
+IDLE_MINUTES=${idle_shutdown_minutes}
+INTERVAL_MIN=5
+NEEDED=$(( (IDLE_MINUTES + INTERVAL_MIN - 1) / INTERVAL_MIN ))
+STATE=/var/run/claude-dev-idle.count
+[ -f "$STATE" ] || echo 0 > "$STATE"
+
+if ps -eo tty= | grep -qE '^pts/'; then
+  echo 0 > "$STATE"
+  exit 0
+fi
+
+count=$(( $(cat "$STATE") + 1 ))
+echo "$count" > "$STATE"
+if [ "$count" -ge "$NEEDED" ]; then
+  TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+  IID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+  REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+  logger -t claude-dev-idle "idle ~$${IDLE_MINUTES}m, stopping $IID"
+  aws ec2 stop-instances --instance-ids "$IID" --region "$REGION"
+fi
+IDLE
+  chmod +x /usr/local/bin/claude-dev-idle.sh
+
+  cat > /etc/systemd/system/claude-dev-idle.service <<'UNIT'
+[Unit]
+Description=Stop the dev box when idle
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/claude-dev-idle.sh
+UNIT
+
+  cat > /etc/systemd/system/claude-dev-idle.timer <<'UNIT'
+[Unit]
+Description=Check idle state every 5 minutes
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
+UNIT
+
+  systemctl daemon-reload
+  systemctl enable --now claude-dev-idle.timer
+fi
 
 echo "provisioning complete" > /var/log/claude-dev-provision.done

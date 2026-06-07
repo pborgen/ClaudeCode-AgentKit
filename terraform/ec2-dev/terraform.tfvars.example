@@ -5,6 +5,14 @@ instance_type  = "t3.small"
 root_volume_gb = 30
 hostname       = "claude-dev"
 
+# Auto-stop the box after this many idle minutes (no terminal session). 0 = never.
+idle_shutdown_minutes = 30
+
+# Optional: make the box feel like home on first boot.
+# git_user_name  = "Your Name"
+# git_user_email = "you@example.com"
+# dotfiles_repo  = "https://github.com/you/dotfiles"  # runs ./install.sh if present
+
 # Get a key at https://login.tailscale.com/admin/settings/keys
 # Enable "Reusable". Leave "Ephemeral" OFF so the node survives stop/start
 # (ephemeral nodes are removed from your tailnet when the box goes offline,

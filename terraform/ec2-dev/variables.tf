@@ -17,9 +17,33 @@ variable "root_volume_gb" {
 }
 
 variable "tailscale_auth_key" {
-  description = "Tailscale auth key used to join the tailnet on first boot. Use a reusable + ephemeral key from https://login.tailscale.com/admin/settings/keys"
+  description = "Tailscale auth key used to join the tailnet on first boot. Use a reusable, NON-ephemeral key from https://login.tailscale.com/admin/settings/keys so the node survives stop/start."
   type        = string
   sensitive   = true
+}
+
+variable "idle_shutdown_minutes" {
+  description = "Auto-stop the instance after this many minutes with no interactive (pseudo-terminal) session. Set 0 to disable."
+  type        = number
+  default     = 30
+}
+
+variable "git_user_name" {
+  description = "Optional: git user.name to configure for the ubuntu user."
+  type        = string
+  default     = ""
+}
+
+variable "git_user_email" {
+  description = "Optional: git user.email to configure for the ubuntu user."
+  type        = string
+  default     = ""
+}
+
+variable "dotfiles_repo" {
+  description = "Optional: a public git repo to clone to ~/.dotfiles on first boot. If it contains an executable install.sh, it is run."
+  type        = string
+  default     = ""
 }
 
 variable "hostname" {

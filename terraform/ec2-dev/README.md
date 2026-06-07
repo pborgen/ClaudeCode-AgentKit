@@ -10,10 +10,12 @@ Terraform that stands up an Ubuntu EC2 instance you can SSH into from your
 - A `t3.small` Ubuntu 24.04 instance (configurable) with a 30 GB encrypted gp3 root disk.
 - A security group with **no public SSH** — only Tailscale's optional direct-path UDP port.
 - An IAM role granting **SSM Session Manager** access as a fallback connection method.
-- First-boot provisioning: 4 GB swap, Tailscale (with Tailscale SSH), Node.js 22, Claude Code.
+- First-boot provisioning: 4 GB swap, AWS CLI, Tailscale (with Tailscale SSH), Node.js 22,
+  Claude Code, optional git identity + dotfiles, and an idle auto-shutdown timer.
 
 Rough cost: a `t3.small` left running 24/7 is ~$15/mo plus a few dollars for the
-EBS volume. `terraform destroy` (or stopping the instance) when you're done keeps it cheap.
+EBS volume. With idle auto-shutdown on (default 30 min) plus the start/stop helper,
+you mostly pay only while you're actually using it.
 
 ## Prerequisites (on your Mac)
 
@@ -56,12 +58,50 @@ If Tailscale is ever down, use SSM from your Mac:
 aws ssm start-session --target $(terraform output -raw instance_id) --region us-east-1
 ```
 
+## Start / stop to save money
+
+The repo ships a helper that finds the box by name (no Terraform state needed),
+so you can run it from anywhere:
+
+```bash
+scripts/box.sh start    # power on and wait until running
+scripts/box.sh ssh      # start if needed, then SSH in
+scripts/box.sh stop     # power off (disk + Tailscale node persist)
+scripts/box.sh status
+```
+
+On top of that, the box **stops itself** after `idle_shutdown_minutes` (default
+30) with no terminal session — a safety net for when you forget. A session in
+`tmux` or a running build counts as active, so it won't pull the rug out from
+under work. Set `idle_shutdown_minutes = 0` to disable.
+
+## Make it feel like home (optional)
+
+Set these in `terraform.tfvars` and they're applied on first boot:
+
+```hcl
+git_user_name  = "Your Name"
+git_user_email = "you@example.com"
+dotfiles_repo  = "https://github.com/you/dotfiles"   # runs ./install.sh if present
+```
+
+## Remote state (optional)
+
+Local state is fine for a single user. To back state up in S3 (e.g. you run
+Terraform from more than one machine):
+
+```bash
+scripts/bootstrap-state.sh my-unique-bucket us-east-1   # once
+cp backend.tf.example backend.tf                        # set the bucket name
+terraform init -migrate-state
+```
+
 ## Common tasks
 
 - **Tear down everything:** `terraform destroy`
-- **Stop the box to save money (keeps the disk):** `aws ec2 stop-instances --instance-ids $(terraform output -raw instance_id)` — start again with `start-instances`.
 - **Re-run provisioning:** edit `user_data.sh.tftpl` and `terraform apply` (the instance is replaced).
 - **Check provisioning finished:** `ls /var/log/claude-dev-provision.done` on the box, or `cat /var/log/cloud-init-output.log`.
+- **Watch the idle timer:** `journalctl -t claude-dev-idle` on the box.
 
 ## Notes & security
 
