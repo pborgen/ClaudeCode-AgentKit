@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+region         = "us-east-1"
+instance_type  = "t3.small"
+root_volume_gb = 30
+hostname       = "claude-dev"
+
+# Get a key at https://login.tailscale.com/admin/settings/keys
+# Recommended: enable "Reusable" and "Ephemeral".
+tailscale_auth_key = "tskey-auth-xxxxxxxxxxxxxxxxxxxx"

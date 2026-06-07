@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Bootstrap a Claude Code dev box: swap, Tailscale (with Tailscale SSH),
+# Node.js, and Claude Code. Runs once at first boot as root.
+set -euxo pipefail
+
+# --- Swap: 2GB RAM is tight for Node builds; back it with 4GB of swap ---
+if ! swapon --show | grep -q '/swapfile'; then
+  fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl git build-essential ca-certificates gnupg ripgrep unzip jq
+
+# --- Tailscale: join the tailnet and enable Tailscale SSH ---
+# `--ssh` lets anyone on your tailnet SSH in, authenticated by tailnet identity,
+# so there are NO ssh keys to manage. Connect with: ssh ubuntu@${hostname}
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up \
+  --authkey='${tailscale_auth_key}' \
+  --hostname='${hostname}' \
+  --ssh \
+  --accept-routes
+
+# --- Node.js LTS (required by Claude Code) ---
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
+
+# --- Claude Code, installed for the ubuntu user (not root) ---
+sudo -iu ubuntu bash <<'EOF'
+set -eux
+npm config set prefix '/home/ubuntu/.npm-global'
+if ! grep -q '.npm-global/bin' /home/ubuntu/.bashrc; then
+  echo 'export PATH=/home/ubuntu/.npm-global/bin:$PATH' >> /home/ubuntu/.bashrc
+fi
+export PATH=/home/ubuntu/.npm-global/bin:$PATH
+npm install -g @anthropic-ai/claude-code
+EOF
+
+echo "provisioning complete" > /var/log/claude-dev-provision.done
