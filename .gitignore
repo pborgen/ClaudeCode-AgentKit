@@ -21,6 +21,16 @@ terraform.rc
 .env
 .env.*
 
+# Python / agents
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+# pr-fixer runtime artifacts + local config
+agents/*/config.yaml
+agents/*/pr-fixer.log
+
 # OS / editor
 .DS_Store
 *.swp

@@ -1,0 +1,54 @@
+# pr-fixer configuration.
+# Copy to config.yaml and edit. Path is passed via --config or PR_FIXER_CONFIG.
+
+# Repos the agent is allowed to touch. NOTHING outside this list is ever modified.
+# Use "owner/name" form.
+repos:
+  - pborgen/some-repo
+
+defaults:
+  # Max fix attempts per PR per head commit. Once exhausted for a given commit,
+  # the PR is labeled `gave_up` and never retried for that commit.
+  max_attempts: 3
+
+  # Seconds to wait for CI to reach a conclusion after pushing a fix.
+  ci_wait_timeout: 1200
+
+  # Seconds between CI status polls.
+  ci_poll_interval: 30
+
+  # Model id for the fixing agent (Claude Agent SDK).
+  model: claude-opus-4-8
+
+  # Hard turn cap per agent run (safety rail against runaway loops).
+  max_turns: 20
+
+  # Optional hard USD budget cap per agent run. null = no cap.
+  max_budget_usd: null
+
+  # Truncate failed CI logs to this many characters before sending to the agent.
+  log_char_budget: 20000
+
+  # Skip draft PRs.
+  skip_drafts: true
+
+  # Skip PRs opened from forks (we usually can't push to a fork's branch).
+  skip_forks: true
+
+  # Diagnose + commit locally but DO NOT push; post the proposed diff as a comment.
+  dry_run: false
+
+  # If non-empty, only act on PRs whose author login is in this list.
+  author_allowlist: []
+
+labels:
+  # Applied while the agent is actively working a PR.
+  in_progress: agentkit:fixing
+  # Applied when attempts are exhausted for a commit.
+  gave_up: agentkit:gave-up
+
+paths:
+  # Where per-repo clones live. Created if missing.
+  workspace_root: ~/.agentkit/pr-fixer/workspaces
+  # Where attempt state + the lockfile live.
+  state_dir: ~/.agentkit/pr-fixer/state

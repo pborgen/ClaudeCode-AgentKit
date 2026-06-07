@@ -1,0 +1,7 @@
+# pr-fixer — run every 15 minutes. Edit the path to match your checkout.
+# Install with: crontab -e   (then paste the line below)
+#
+# run.sh loads .env, activates the venv, and self-locks so overlapping ticks
+# are skipped — safe to schedule frequently.
+
+*/15 * * * * /opt/agentkit/ClaudeCode-AgentKit/agents/pr-fixer/deploy/run.sh >> /opt/agentkit/ClaudeCode-AgentKit/agents/pr-fixer/pr-fixer.log 2>&1

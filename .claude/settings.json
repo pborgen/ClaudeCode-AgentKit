@@ -1,14 +1,28 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(gh pr create --title 'Add Terraform for a Tailscale-reachable EC2 Claude Code dev box' --body ' *)",
       "Bash(git ls-remote *)",
       "Bash(git checkout *)",
       "Bash(git merge *)",
       "Bash(git branch *)",
-      "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Bash(chmod +x /Users/paulborgen/dev/code/pborgen/ClaudeCode-AgentKit/scripts/*.sh)",
+      "Bash(terraform fmt *)",
+      "Bash(terraform validate *)",
+      "Bash(command -v shellcheck)",
+      "Bash(shellcheck ../../scripts/box.sh ../../scripts/bootstrap-state.sh)",
+      "Bash(terraform console *)",
+      "Bash(command -v jq)",
+      "Bash(jq --version)",
+      "Bash(scripts/grant-permissions.sh --file /Users/paulborgen/.claude/settings.json --list)",
+      "Bash(scripts/grant-permissions.sh)",
+      "Bash(terraform init *)",
+      "Bash(TF_VAR_tailscale_auth_key=\"tskey-plan-dryrun-placeholder\" terraform plan -input=false -no-color)",
+      "Bash(TF_VAR_tailscale_auth_key=\"x\" terraform plan -input=false -no-color)",
+      "Bash(bash -n scripts/agentkit.sh)",
+      "Bash(scripts/agentkit.sh settings *)",
+      "Bash(scripts/agentkit.sh --help)",
+      "Bash(scripts/agentkit.sh)"
     ]
   }
 }

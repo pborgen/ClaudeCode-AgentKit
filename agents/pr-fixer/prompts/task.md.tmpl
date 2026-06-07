@@ -1,0 +1,14 @@
+Repository: {repo}
+Pull request: #{pr_number} — {title}
+Branch: {branch} (checked out at commit {head_oid})
+Attempt: {attempt} of {max_attempts}
+
+Failing checks: {failing_checks}
+
+Below are the failed GitHub Actions logs. Diagnose the root cause, fix it in the
+working tree, verify locally by running the relevant tests/build, then create a
+single `fix:` commit. Do not push.
+
+----- FAILED CI LOGS (may be truncated) -----
+{logs}
+----- END LOGS -----
