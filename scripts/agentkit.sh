@@ -28,44 +28,67 @@ BOOTSTRAP="$ROOT/scripts/bootstrap-state.sh"
 
 # ---- pretty output --------------------------------------------------------
 if [ -t 1 ]; then
-  BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GRN=$'\033[32m'
-  YEL=$'\033[33m'; BLU=$'\033[36m'; RST=$'\033[0m'
+  BOLD=$'\033[1m'; DIM=$'\033[2m'; RST=$'\033[0m'
+  RED=$'\033[38;5;203m'; GRN=$'\033[38;5;42m';  YEL=$'\033[38;5;220m'
+  BLU=$'\033[38;5;39m';  CYN=$'\033[38;5;44m';  MAG=$'\033[38;5;177m'
+  GREY=$'\033[38;5;245m'
+  case "${COLORTERM:-}" in *truecolor*|*24bit*) TRUECOLOR=1 ;; *) TRUECOLOR='' ;; esac
 else
-  BOLD=''; DIM=''; RED=''; GRN=''; YEL=''; BLU=''; RST=''
+  BOLD=''; DIM=''; RST=''; RED=''; GRN=''; YEL=''; BLU=''
+  CYN=''; MAG=''; GREY=''; TRUECOLOR=''
 fi
+
 say()  { printf '%s\n' "$*"; }
-head() { printf '\n%s%s%s\n' "$BOLD" "$*" "$RST"; }
-ok()   { printf '%s✓%s %s\n' "$GRN" "$RST" "$*"; }
-warn() { printf '%s!%s %s\n' "$YEL" "$RST" "$*"; }
-err()  { printf '%s✗%s %s\n' "$RED" "$RST" "$*" >&2; }
+hr()   { printf '  %s────────────────────────────────────────%s\n' "$GREY" "$RST"; }
+head() {
+  printf '\n  %s▌%s %s%s%s\n' "$CYN" "$RST" "$BOLD" "$*" "$RST"
+  hr
+}
+ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$*"; }
+warn() { printf '  %s▲%s %s\n' "$YEL" "$RST" "$*"; }
+err()  { printf '  %s✗%s %s\n' "$RED" "$RST" "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# item KEY LABEL [DESC] [KEYCOLOR] — one styled menu row
+item() {
+  local key="$1" label="$2" desc="${3:-}" col="${4:-$CYN}"
+  printf '   %s%s%s  %s%-18s%s %s%s%s\n' \
+    "$col" "$key" "$RST" "$BOLD" "$label" "$RST" "$GREY" "$desc" "$RST"
+}
+
+# styled prompt used by the menus
+menu_prompt() {
+  local ans
+  read -r -p "$(printf '\n  %s❯%s ' "$CYN" "$RST")" ans </dev/tty || true
+  printf '%s' "$ans"
+}
 
 # ask "Prompt" "default"  -> echoes the answer (default on empty)
 ask() {
   local prompt="$1" def="${2:-}" ans
   if [ -n "$def" ]; then
-    read -r -p "$prompt [$def]: " ans </dev/tty || true
+    read -r -p "$(printf '  %s%s%s %s[%s]%s: ' "$CYN" "$prompt" "$RST" "$GREY" "$def" "$RST")" ans </dev/tty || true
     printf '%s' "${ans:-$def}"
   else
-    read -r -p "$prompt: " ans </dev/tty || true
+    read -r -p "$(printf '  %s%s%s: ' "$CYN" "$prompt" "$RST")" ans </dev/tty || true
     printf '%s' "$ans"
   fi
 }
 # ask_secret "Prompt" -> echoes a hidden answer
 ask_secret() {
   local prompt="$1" ans
-  read -r -s -p "$prompt: " ans </dev/tty || true
+  read -r -s -p "$(printf '  %s%s%s: ' "$CYN" "$prompt" "$RST")" ans </dev/tty || true
   printf '\n' >&2
   printf '%s' "$ans"
 }
 # confirm "Question" -> returns 0 on yes
 confirm() {
   local ans
-  read -r -p "$1 [y/N]: " ans </dev/tty || true
+  read -r -p "$(printf '  %s%s%s [%sy%s/%sN%s]: ' "$BOLD" "$1" "$RST" "$GRN" "$RST" "$RED" "$RST")" ans </dev/tty || true
   [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
 
-pause() { read -r -p $'\nPress Enter to continue…' _ </dev/tty || true; }
+pause() { read -r -p "$(printf '\n  %spress enter to continue…%s ' "$GREY" "$RST")" _ </dev/tty || true; }
 
 # trunc "string" [width] -> string clipped to width with an ellipsis
 trunc() {
@@ -141,22 +164,20 @@ set_mode() {
 
 permissions_menu() {
   while true; do
-    head "Permissions — .claude/settings.json"
-    say "  Default permission mode controls how much Claude can do without asking."
+    head "Permissions · .claude/settings.json"
+    say "  ${GREY}How much Claude can do without asking.${RST}"
     if have jq && [ -f "$SETTINGS" ]; then
       local cur; cur="$(jq -r '.permissions.defaultMode // "default"' "$SETTINGS" 2>/dev/null || echo default)"
-      say "  ${DIM}Current defaultMode: ${cur}${RST}"
+      say "  ${GREY}current mode:${RST} ${BOLD}${cur}${RST}"
     fi
-    cat <<EOF
-
-  1) ${BOLD}Full permissions${RST}  — bypassPermissions (Claude won't ask; ${RED}use with care${RST})
-  2) Auto-accept edits — acceptEdits (file edits run; other actions still ask)
-  3) Reset to default  — default (ask on anything not allow-listed)
-  4) Add an allow rule (e.g. "Bash(git push *)")
-  5) Show current settings.json
-  b) Back
-EOF
-    case "$(ask 'Choose')" in
+    echo
+    item 1 "Full permissions"   "bypassPermissions — no prompts" "$RED"
+    item 2 "Auto-accept edits"  "acceptEdits — edits run, rest asks"
+    item 3 "Reset to default"   "ask unless allow-listed"
+    item 4 "Add allow rule"     "e.g. Bash(git push *)"
+    item 5 "Show settings.json" ""
+    item b "Back"               "" "$GREY"
+    case "$(menu_prompt)" in
       1)
         warn "bypassPermissions lets Claude run ANY command without confirmation."
         warn "Only enable this in a sandbox / box you're comfortable with (like the EC2 dev box)."
@@ -368,15 +389,13 @@ settings_inspect() {
 
 settings_menu() {
   while true; do
-    head "Settings inspector — Claude Code configuration"
-    cat <<EOF
-
-  1) ${BOLD}Resolved view${RST}   — scopes + effective settings with source attribution
-  2) Full dump        — resolved view, then every scope file pretty-printed
-  3) JSON output      — machine-readable (for agents / piping to jq)
-  b) Back
-EOF
-    case "$(ask 'Choose')" in
+    head "Settings inspector · Claude Code"
+    echo
+    item 1 "Resolved view" "scopes + effective settings"
+    item 2 "Full dump"     "resolved + every scope file"
+    item 3 "JSON output"   "machine-readable (jq / agents)"
+    item b "Back"          "" "$GREY"
+    case "$(menu_prompt)" in
       1) settings_inspect report; pause ;;
       2) settings_inspect full | ${PAGER:-less} -R 2>/dev/null || settings_inspect full; pause ;;
       3) settings_inspect json; pause ;;
@@ -476,17 +495,15 @@ box() {
     start|stop|status|ssh) BOX_NAME="$(box_name)" "$BOX" "$sub"; return ;;
   esac
   while true; do
-    head "EC2 dev box — control"
-    say "  ${DIM}Targets the box named '$(box_name)'${RST}"
-    cat <<EOF
-
-  1) Status
-  2) Start
-  3) SSH in (starts it first if needed)
-  4) Stop
-  b) Back
-EOF
-    case "$(ask 'Choose')" in
+    head "EC2 dev box · control"
+    say "  ${GREY}targets the box named${RST} ${BOLD}$(box_name)${RST}"
+    echo
+    item 1 "Status" ""
+    item 2 "Start"  ""
+    item 3 "SSH in" "starts it first if needed"
+    item 4 "Stop"   ""
+    item b "Back"   "" "$GREY"
+    case "$(menu_prompt)" in
       1) BOX_NAME="$(box_name)" "$BOX" status; pause ;;
       2) BOX_NAME="$(box_name)" "$BOX" start;  pause ;;
       3) BOX_NAME="$(box_name)" "$BOX" ssh ;;
@@ -539,29 +556,52 @@ state() {
 # =====================================================================
 # Main menu
 # =====================================================================
+# Block-art "AGENTKIT" with a cyan→violet gradient (per letter-cell, so it stays
+# correct on macOS bash 3.2 where multibyte slicing would break). Falls back to
+# two-tone on 256-color terminals and plain text with no color.
 banner() {
-  cat <<EOF
-${BOLD}${BLU}ClaudeCode-AgentKit${RST} — setup wizard
-${DIM}Turn on the pieces of this kit, one at a time.${RST}
-EOF
+  local -a r1=( "█▀█" "█▀▀" "█▀▀" "█▄█" "▀█▀" "█▄▀" " █ " "▀█▀" )
+  local -a r2=( "█▀█" "█▄█" "██▄" "█ █" " █ " "█▀▄" " █ " " █ " )
+  local n=${#r1[@]} i r g b
+  local ra=34 ga=211 ba=238 rb=192 gb=132 bb=252   # cyan → violet
+  printf '\n'
+  if [ -n "$TRUECOLOR" ]; then
+    printf '  '
+    for (( i=0; i<n; i++ )); do
+      r=$(( ra + (rb-ra)*i/(n-1) )); g=$(( ga + (gb-ga)*i/(n-1) )); b=$(( ba + (bb-ba)*i/(n-1) ))
+      printf '\033[38;2;%d;%d;%dm%s ' "$r" "$g" "$b" "${r1[$i]}"
+    done
+    printf '%s\n  ' "$RST"
+    for (( i=0; i<n; i++ )); do
+      r=$(( ra + (rb-ra)*i/(n-1) )); g=$(( ga + (gb-ga)*i/(n-1) )); b=$(( ba + (bb-ba)*i/(n-1) ))
+      printf '\033[38;2;%d;%d;%dm%s ' "$r" "$g" "$b" "${r2[$i]}"
+    done
+    printf '%s\n' "$RST"
+  elif [ -n "$CYN" ]; then
+    printf '  %s%s%s\n' "$CYN" "$(printf '%s ' "${r1[@]}")" "$RST"
+    printf '  %s%s%s\n' "$MAG" "$(printf '%s ' "${r2[@]}")" "$RST"
+  else
+    printf '  %s\n  %s\n' "$(printf '%s ' "${r1[@]}")" "$(printf '%s ' "${r2[@]}")"
+  fi
+  printf '  %sClaudeCode%s %s%sAgentKit%s  %s· dev-from-anywhere toolkit%s\n' \
+    "$BOLD" "$RST" "$BOLD" "$MAG" "$RST" "$GREY" "$RST"
+  hr
 }
 
 menu() {
   while true; do
     clear 2>/dev/null || true
     banner
-    cat <<EOF
-
-  1) Permissions       — edit .claude/settings.json (e.g. full permissions)
-  2) Settings inspector — show all Claude Code settings & how they resolve
-  3) Deploy dev box    — configure + 'terraform apply' the EC2 box
-  4) Control dev box   — start / stop / ssh / status
-  5) Remote state      — S3 backend for Terraform
-  6) Doctor            — check prerequisites
-  7) Tear down dev box — terraform destroy
-  q) Quit
-EOF
-    case "$(ask 'Choose')" in
+    printf '\n'
+    item 1 "Permissions"        "edit .claude/settings.json"
+    item 2 "Settings inspector" "all scopes & how they resolve"
+    item 3 "Deploy dev box"     "configure + terraform apply"
+    item 4 "Control dev box"    "start / stop / ssh / status"
+    item 5 "Remote state"       "S3 backend for Terraform"
+    item 6 "Doctor"             "check prerequisites"
+    item 7 "Tear down dev box"  "terraform destroy" "$RED"
+    item q "Quit"               "" "$RED"
+    case "$(menu_prompt)" in
       1) permissions_menu ;;
       2) settings_menu ;;
       3) deploy ;;
@@ -569,7 +609,7 @@ EOF
       5) state ;;
       6) doctor; pause ;;
       7) destroy ;;
-      q|Q|"") say "Bye."; exit 0 ;;
+      q|Q|"") printf '\n  %s✦ see you in the cloud.%s\n\n' "$MAG" "$RST"; exit 0 ;;
       *) warn "Unknown choice." ;;
     esac
   done
